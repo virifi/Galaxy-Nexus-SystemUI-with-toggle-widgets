@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:systemui="http://schemas.android.com/apk/res/com.android.systemui"
+    android:orientation="horizontal"
+    android:id="@+id/setting_buttons"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent">
+  <LinearLayout
+      android:orientation="vertical"
+      android:id="@+id/wifi_setting"
+      android:background="@drawable/appwidget_button_center"
+      android:focusable="true"
+      android:clickable="true"
+      android:layout_width="match_parent"
+      android:layout_height="fill_parent"
+      android:layout_weight="1.0">
+    <ImageView
+        android:id="@+id/wifi_setting_icon"
+        android:layout_width="fill_parent"
+        android:layout_height="0.0dip"
+        android:src="@drawable/ic_wifi"
+        android:scaleType="center"
+        android:layout_weight="1.0" />
+    <ImageView
+        android:id="@+id/wifi_setting_ind"
+        android:layout_width="fill_parent"
+        android:layout_height="3.0dip"
+        android:scaleType="fitXY"/>
+  </LinearLayout>
+  <LinearLayout
+      android:orientation="vertical"
+      android:id="@+id/bluetooth_setting"
+      android:background="@drawable/appwidget_button_center"
+      android:focusable="true"
+      android:clickable="true"
+      android:layout_width="match_parent"
+      android:layout_height="fill_parent"
+      android:layout_weight="1.0">
+    <ImageView
+        android:id="@+id/bluetooth_setting_icon"
+        android:layout_width="fill_parent"
+        android:layout_height="0.0dip"
+        android:src="@drawable/ic_bluetooth"
+        android:scaleType="center"
+        android:layout_weight="1.0" />
+    <ImageView
+        android:id="@+id/bluetooth_setting_ind"
+        android:layout_width="fill_parent"
+        android:layout_height="3.0dip"
+        android:scaleType="fitXY" />
+  </LinearLayout>
+  <LinearLayout
+      android:orientation="vertical"
+      android:id="@+id/gps_setting"
+      android:background="@drawable/appwidget_button_center"
+      android:focusable="true"
+      android:clickable="true"
+      android:layout_width="match_parent"
+      android:layout_height="fill_parent"
+      android:layout_weight="1.0">
+    <ImageView
+        android:id="@+id/gps_setting_icon"
+        android:layout_width="fill_parent"
+        android:layout_height="0.0dip"
+        android:src="@drawable/ic_gps"
+        android:scaleType="center"
+        android:layout_weight="1.0" />
+    <ImageView
+        android:id="@+id/gps_setting_ind"
+        android:layout_width="fill_parent"
+        android:layout_height="3.0dip"
+        android:scaleType="fitXY" />
+  </LinearLayout>
+  <LinearLayout
+      android:orientation="vertical"
+      android:id="@+id/sound_setting"
+      android:background="@drawable/appwidget_button_center"
+      android:focusable="true"
+      android:clickable="true"
+      android:layout_width="match_parent"
+      android:layout_height="fill_parent"
+      android:layout_weight="1.0">
+    <ImageView
+        android:id="@+id/sound_setting_icon"
+        android:layout_width="fill_parent"
+        android:layout_height="0.0dip"
+        android:scaleType="center"
+        android:layout_weight="1.0" />
+    <ImageView
+        android:id="@+id/sound_setting_ind"
+        android:layout_width="fill_parent"
+        android:layout_height="3.0dip"
+        android:scaleType="fitXY" />
+  </LinearLayout>
+  <LinearLayout
+      android:orientation="vertical"
+      android:id="@+id/rot_setting"
+      android:background="@drawable/appwidget_button_center"
+      android:focusable="true"
+      android:clickable="true"
+      android:layout_width="match_parent"
+      android:layout_height="fill_parent"
+      android:layout_weight="1.0">
+    <ImageView
+        android:id="@+id/rot_setting_icon"
+        android:layout_width="fill_parent"
+        android:layout_height="0.0dip"
+        android:src="@drawable/ic_sync"
+        android:scaleType="center"
+        android:layout_weight="1.0" />
+    <ImageView
+        android:id="@+id/rot_setting_ind"
+        android:layout_width="fill_parent"
+        android:layout_height="3.0dip"
+        android:scaleType="fitXY" />
+  </LinearLayout>
+  <LinearLayout
+      android:orientation="vertical"
+      android:id="@+id/wifi_ap_setting"
+      android:background="@drawable/appwidget_button_center"
+      android:focusable="true"
+      android:clickable="true"
+      android:layout_width="match_parent"
+      android:layout_height="fill_parent"
+      android:layout_weight="1.0">
+    <ImageView
+        android:id="@+id/wifi_ap_setting_icon"
+        android:layout_width="fill_parent"
+        android:layout_height="0.0dip"
+        android:src="@drawable/ic_tether_wifi"
+        android:scaleType="center"
+        android:layout_weight="1.0" />
+    <ImageView
+        android:id="@+id/wifi_ap_setting_ind"
+        android:layout_width="fill_parent"
+        android:layout_height="3.0dip"
+        android:scaleType="fitXY"/>
+  </LinearLayout>
+</LinearLayout>

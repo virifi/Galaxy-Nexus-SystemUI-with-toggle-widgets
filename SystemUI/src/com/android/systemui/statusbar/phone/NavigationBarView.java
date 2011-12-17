@@ -1,0 +1,885 @@
+/*
+ * Copyright (C) 2008 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.android.systemui.statusbar.phone;
+
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.content.Context;
+import android.content.res.Resources;
+import android.os.ServiceManager;
+import android.util.AttributeSet;
+import android.util.Slog;
+import android.view.animation.AccelerateInterpolator;
+import android.view.Display;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Surface;
+import android.view.WindowManager;
+import android.widget.LinearLayout;
+
+import android.content.Intent;
+import android.view.View.OnClickListener;
+import android.view.View.OnLongClickListener;
+
+import android.app.Activity;
+import android.content.SharedPreferences;
+import android.util.Log;
+import android.content.pm.PackageManager;
+import java.util.HashMap;
+import android.widget.Toast;
+
+// for ViewPager
+import android.support.v4.viewpager.ViewPager;
+import android.support.v4.viewpager.PagerAdapter;
+import android.view.LayoutInflater;
+import android.os.Parcelable;
+import android.widget.FrameLayout;
+
+// for toggle setting
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
+import android.net.wifi.WifiManager;
+import android.net.wifi.WifiConfiguration;
+import android.bluetooth.BluetoothAdapter;
+import android.widget.ImageView;
+import android.provider.Settings;
+import android.provider.Settings.SettingNotFoundException;
+import android.net.Uri;
+import android.media.AudioManager;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+
+// for onClick
+import android.os.SystemClock;
+import android.os.RemoteException;
+import android.view.IWindowManager;                                                                                                       
+import android.view.KeyCharacterMap;                                                                                                      
+import android.view.KeyEvent;    
+
+import com.android.internal.statusbar.IStatusBarService;
+
+import com.android.systemui.R;
+
+public class NavigationBarView extends LinearLayout {
+    final static boolean DEBUG = false;
+    final static String TAG = "PhoneStatusBar/NavigationBarView";
+
+    final static boolean DEBUG_DEADZONE = false;
+
+    final static boolean NAVBAR_ALWAYS_AT_RIGHT = true;
+
+    final static boolean ANIMATE_HIDE_TRANSITION = false; // turned off because it introduces unsightly delay when videos goes to full screen
+
+    protected IStatusBarService mBarService;
+    final Display mDisplay;
+    View mCurrentView = null;
+    View[] mRotatedViews = new View[4];
+
+    HashMap<String, View> mViewHashMap = new HashMap<String, View>();
+    ViewPager mViewPager;
+    ViewAdapter mAdapter;
+    SettingChangedReceiver mSettingChangedReceiver;
+    OnViewPagerItemInstantiatedListener mListener;
+    
+
+    // for toggle setting
+    WifiReceiver mWifiReceiver;
+    BluetoothReceiver mBluetoothReceiver;
+    GpsReceiver mGpsReceiver;
+    SoundReceiver mSoundReceiver;
+    WifiApReceiver mWifiApReceiver;
+    
+    
+
+    int mBarSize;
+    boolean mVertical;
+
+    boolean mHidden, mLowProfile, mShowMenu;
+    int mDisabledFlags = 0;
+
+    public View getRecentsButton() {
+        return mCurrentView.findViewById(R.id.recent_apps);
+    }
+
+    public View getMenuButton() {
+        return mCurrentView.findViewById(R.id.menu);
+    }
+
+    public View getBackButton() {
+        return mCurrentView.findViewById(R.id.back);
+    }
+
+    public View getHomeButton() {
+        return mCurrentView.findViewById(R.id.home);
+    }
+
+    public View getSearchButton() {
+        return mCurrentView.findViewById(R.id.search);
+    }
+
+    public View getOptionalButton() {
+        return mCurrentView.findViewById(R.id.optional);
+    }
+
+    public NavigationBarView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+
+        mHidden = false;
+
+        mDisplay = ((WindowManager)context.getSystemService(
+                Context.WINDOW_SERVICE)).getDefaultDisplay();
+        mBarService = IStatusBarService.Stub.asInterface(
+                ServiceManager.getService(Context.STATUS_BAR_SERVICE));
+
+        final Resources res = mContext.getResources();
+        mBarSize = res.getDimensionPixelSize(R.dimen.navigation_bar_size);
+        mVertical = false;
+        mShowMenu = true;
+
+    }
+
+    View.OnTouchListener mLightsOutListener = new View.OnTouchListener() {
+        @Override
+        public boolean onTouch(View v, MotionEvent ev) {
+            if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+                // even though setting the systemUI visibility below will turn these views
+                // on, we need them to come up faster so that they can catch this motion
+                // event
+                setLowProfile(false, false, false);
+
+                try {
+                    mBarService.setSystemUiVisibility(0);
+                } catch (android.os.RemoteException ex) {
+                }
+            }
+            return false;
+        }
+    };
+
+    public void setDisabledFlags(int disabledFlags) {
+        setDisabledFlags(disabledFlags, false);
+    }
+
+    public void setDisabledFlags(int disabledFlags, boolean force) {
+        if (!force && mDisabledFlags == disabledFlags) return;
+
+        mDisabledFlags = disabledFlags;
+
+        final boolean disableHome = ((disabledFlags & View.STATUS_BAR_DISABLE_HOME) != 0);
+        final boolean disableRecent = ((disabledFlags & View.STATUS_BAR_DISABLE_RECENT) != 0);
+        final boolean disableBack = ((disabledFlags & View.STATUS_BAR_DISABLE_BACK) != 0);
+
+        View backView = getBackButton();
+        if (backView != null)
+            backView.setVisibility(disableBack       ? View.INVISIBLE : View.VISIBLE);
+        View homeView = getHomeButton();
+        if (homeView != null)
+            homeView.setVisibility(disableHome       ? View.INVISIBLE : View.VISIBLE);
+        View recentsView = getRecentsButton();
+        if (recentsView != null)
+            recentsView.setVisibility(disableRecent     ? View.INVISIBLE : View.VISIBLE);
+
+        // メニューキー・サーチキー・オプショナルキーの表示・非表示をホームキーと同期させる
+        View menuView = getMenuButton();
+        if (menuView != null)
+            menuView.setVisibility(disableHome ? View.INVISIBLE : View.VISIBLE);
+        View searchView = getSearchButton();
+        if (searchView != null)
+            searchView.setVisibility(disableHome ? View.INVISIBLE : View.VISIBLE);
+        View optionalView = getOptionalButton();
+        if (optionalView != null)
+            optionalView.setVisibility(disableHome ? View.INVISIBLE : View.VISIBLE);
+
+        View centerPage = mAdapter.getView(1);
+        if (centerPage != null)
+            centerPage.setVisibility(disableHome ? View.INVISIBLE : View.VISIBLE);
+    }
+
+    public void setMenuVisibility(final boolean show) {
+        setMenuVisibility(show, false);
+    }
+
+    public void setMenuVisibility(final boolean show, final boolean force) {
+        return;
+        /*
+        if (!force && mShowMenu == show) return;
+
+        mShowMenu = show;
+
+        getMenuButton().setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
+        */
+    }
+
+    public void setLowProfile(final boolean lightsOut) {
+        setLowProfile(lightsOut, true, false);
+    }
+
+    public void setLowProfile(final boolean lightsOut, final boolean animate, final boolean force) {
+        if (!force && lightsOut == mLowProfile) return;
+
+        mLowProfile = lightsOut;
+
+        if (DEBUG) Slog.d(TAG, "setting lights " + (lightsOut?"out":"on"));
+
+        final View navButtons = mCurrentView.findViewById(R.id.nav_buttons);
+        final View lowLights = mCurrentView.findViewById(R.id.lights_out);
+
+        // ok, everyone, stop it right there
+        navButtons.animate().cancel();
+        lowLights.animate().cancel();
+
+        if (!animate) {
+            navButtons.setAlpha(lightsOut ? 0f : 1f);
+
+            lowLights.setAlpha(lightsOut ? 1f : 0f);
+            lowLights.setVisibility(lightsOut ? View.VISIBLE : View.GONE);
+        } else {
+            navButtons.animate()
+                .alpha(lightsOut ? 0f : 1f)
+                .setDuration(lightsOut ? 600 : 200)
+                .start();
+
+            lowLights.setOnTouchListener(mLightsOutListener);
+            if (lowLights.getVisibility() == View.GONE) {
+                lowLights.setAlpha(0f);
+                lowLights.setVisibility(View.VISIBLE);
+            }
+            lowLights.animate()
+                .alpha(lightsOut ? 1f : 0f)
+                .setStartDelay(lightsOut ? 500 : 0)
+                .setDuration(lightsOut ? 1000 : 300)
+                .setInterpolator(new AccelerateInterpolator(2.0f))
+                .setListener(lightsOut ? null : new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator _a) {
+                        lowLights.setVisibility(View.GONE);
+                    }
+                })
+                .start();
+        }
+    }
+
+    public void setHidden(final boolean hide) {
+        if (hide == mHidden) return;
+
+        mHidden = hide;
+        Slog.d(TAG,
+            (hide ? "HIDING" : "SHOWING") + " navigation bar");
+
+        // bring up the lights no matter what
+        setLowProfile(false);
+    }
+
+    public void onFinishInflate() {
+        mRotatedViews[Surface.ROTATION_0] = 
+        mRotatedViews[Surface.ROTATION_180] = findViewById(R.id.rot0);
+
+        mRotatedViews[Surface.ROTATION_90] = findViewById(R.id.rot90);
+        
+        mRotatedViews[Surface.ROTATION_270] = NAVBAR_ALWAYS_AT_RIGHT
+                                                ? findViewById(R.id.rot90)
+                                                : findViewById(R.id.rot270);
+
+        for (View v : mRotatedViews) {
+            // this helps avoid drawing artifacts with glowing navigation keys 
+            ViewGroup group = (ViewGroup) v.findViewById(R.id.nav_buttons);
+            group.setMotionEventSplittingEnabled(false);
+        }
+        mCurrentView = mRotatedViews[Surface.ROTATION_0];
+
+        mSettingChangedReceiver = new SettingChangedReceiver();
+        IntentFilter settingChangedFilter = new IntentFilter();
+        settingChangedFilter.addAction("com.android.systemui.statusbar.NAVIGATION_BAR_SETTING_CHANGED");
+        settingChangedFilter.addAction("com.android.systemui.statusbar.TOGGLE_BAR_SETTING_CHANGED");
+        mContext.registerReceiver(mSettingChangedReceiver, settingChangedFilter);
+
+        // toggle settings
+        mWifiReceiver = new WifiReceiver();
+        mBluetoothReceiver = new BluetoothReceiver();
+        mGpsReceiver = new GpsReceiver();
+        mSoundReceiver = new SoundReceiver();
+        mWifiApReceiver = new WifiApReceiver();
+
+        mAdapter = new ViewAdapter(mContext);
+        mViewPager = (ViewPager)((FrameLayout) findViewById(R.id.rot02)).findViewById(R.id.viewpager);
+        mViewPager.setAdapter(mAdapter);
+        mViewPager.setCurrentItem(1);
+        
+        IntentFilter wifiFilter = new IntentFilter("android.net.wifi.WIFI_STATE_CHANGED");
+        mContext.registerReceiver(mWifiReceiver, wifiFilter);
+        IntentFilter bluetoothFilter = new IntentFilter("android.bluetooth.adapter.action.STATE_CHANGED");
+        mContext.registerReceiver(mBluetoothReceiver, bluetoothFilter);
+        IntentFilter gpsFilter = new IntentFilter("android.location.PROVIDERS_CHANGED");
+        mContext.registerReceiver(mGpsReceiver, gpsFilter);
+        IntentFilter soundFilter = new IntentFilter("android.media.RINGER_MODE_CHANGED");
+        mContext.registerReceiver(mSoundReceiver, soundFilter);
+        IntentFilter wifiApFilter = new IntentFilter("android.net.wifi.WIFI_AP_STATE_CHANGED");
+        mContext.registerReceiver(mWifiApReceiver, wifiApFilter);
+    }
+
+
+    public void reorient() {
+        View viewPagerView = findViewById(R.id.rot02);
+        
+        final int rot = mDisplay.getRotation();
+        for (int i=0; i<4; i++) {
+            mRotatedViews[i].setVisibility(View.GONE);
+        }
+        mCurrentView = mRotatedViews[rot];
+        if (rot == 0) {
+                viewPagerView.setVisibility(View.VISIBLE);
+        } else {
+            mCurrentView.setVisibility(View.VISIBLE);
+            viewPagerView.setVisibility(View.GONE);
+        }
+        mVertical = (rot == Surface.ROTATION_90 || rot == Surface.ROTATION_270);
+
+
+
+        // force the low profile & disabled states into compliance
+        setLowProfile(mLowProfile, false, true /* force */);
+        setDisabledFlags(mDisabledFlags, true /* force */);
+        setMenuVisibility(mShowMenu, true /* force */);
+
+        if (DEBUG_DEADZONE) {
+            mCurrentView.findViewById(R.id.deadzone).setBackgroundColor(0x808080FF);
+        }
+
+        if (DEBUG) {
+            Slog.d(TAG, "reorient(): rot=" + mDisplay.getRotation());
+        }
+    }
+
+    private class ViewAdapter extends PagerAdapter {
+        private static final int VIEWCOUNT = 3;
+        private final LayoutInflater mInflater;
+        private View[] views = new View[VIEWCOUNT];
+
+        public ViewAdapter(Context context) {
+            mInflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        }
+
+        @Override
+        public void destroyItem(final View collection, final int position, final Object view) {
+            ((ViewPager) collection).removeView((View) view);
+        }
+ 
+        @Override
+        public void finishUpdate(final View collection) {
+        }
+ 
+        @Override
+        public int getCount() {
+            return VIEWCOUNT;
+        }
+ 
+        @Override
+        public Object instantiateItem(final View collection, final int position) {
+            final ViewPager pager = (ViewPager) collection;
+            View view;
+
+            if (position == 0) {
+                views[position] = mInflater.inflate(R.layout.navigation_bar_left_page, pager, false);
+            } else if (position == 1) {
+                final View centerView = mInflater.inflate(R.layout.navigation_bar_center_page, pager, false);
+                setUpNavigationBarKeys(centerView);
+        
+                // for optionalButton action
+                View optionalButton = centerView.findViewById(R.id.optional);
+                if (optionalButton != null) {
+                    optionalButton.setOnClickListener(new OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                Intent intent = new Intent("com.android.systemui.statusbar.OPTIONAL_BUTTON_CLICKED");
+                                mContext.sendBroadcast(intent);
+                            }
+                        });
+                }
+                mListener.onItemInstantiated(centerView.findViewById(R.id.recent_apps));
+                views[position] = centerView;
+            } else {
+                View settingView = mInflater.inflate(R.layout.navigation_bar_right_page, pager, false);
+                mWifiReceiver.onItemInstantiated(settingView);
+                mBluetoothReceiver.onItemInstantiated(settingView);
+                mGpsReceiver.onItemInstantiated(settingView);
+                mSoundReceiver.onItemInstantiated(settingView);
+                mWifiApReceiver.onItemInstantiated(settingView);
+                setUpRotationButton(settingView);
+                
+                views[position] = settingView;
+            }
+            
+            pager.addView(views[position]);
+
+            return views[position];
+        }
+ 
+        @Override
+        public boolean isViewFromObject(final View view, final Object object) {
+            return view == (View) object;
+        }
+ 
+        @Override
+        public void restoreState(final Parcelable parcel, final ClassLoader classLoader) {
+        }
+ 
+        @Override
+        public Parcelable saveState() {
+            return null;
+        }
+ 
+        @Override
+        public void startUpdate(final View collection) {
+        }
+
+        public View getView(int position) {
+            return views[position];
+        }
+    }
+
+    private void setUpNavigationBarKeys(View view) {
+        Context packageContext = null;
+        try {
+            packageContext = mContext.createPackageContext("net.virifi.android.navigationbarsettings", Context.CONTEXT_RESTRICTED);
+        } catch (PackageManager.NameNotFoundException e) {
+            //e.printStackTrace();
+            return;
+        }
+        SharedPreferences pref = packageContext.getSharedPreferences("NavigationBarSettings", Activity.MODE_WORLD_READABLE | Activity.MODE_MULTI_PROCESS);
+		if (pref == null) {
+            Log.d("setUpNavigationBarKeys", "pref is null");
+			return;
+		}
+        if (pref.getString("keyname1", null) == null) {
+            Log.d("setUpNavigationBarKeys", "keyname1 is null");
+			return;
+        }
+        ViewGroup group = (ViewGroup) view.findViewById(R.id.nav_buttons);
+        if (mViewHashMap.size() == 0) {
+            View menuView = group.findViewById(R.id.menu);
+            mViewHashMap.put("Menu", menuView);
+            View backView = group.findViewById(R.id.back);
+            mViewHashMap.put("Back", backView);
+            View homeView = group.findViewById(R.id.home);
+            mViewHashMap.put("Home", homeView);
+            View searchView = group.findViewById(R.id.search);
+            mViewHashMap.put("Search", searchView);
+            View recentView = group.findViewById(R.id.recent_apps);
+            mViewHashMap.put("RecentApps", recentView);
+            View optionalView = group.findViewById(R.id.optional);
+            mViewHashMap.put("Optional", optionalView);
+            View menu2View = group.findViewById(R.id.menu2);
+            mViewHashMap.put("Menu2", menu2View);
+            View menu3View = group.findViewById(R.id.menu3);
+            mViewHashMap.put("Menu3", menu3View);
+            View spacer1View = group.findViewById(R.id.spacer1);
+            mViewHashMap.put("Spacer1", spacer1View);
+            View spacer2View = group.findViewById(R.id.spacer2);
+            mViewHashMap.put("Spacer2", spacer2View);
+        }
+
+        group.removeAllViews();
+
+        final int FP = LinearLayout.LayoutParams.FILL_PARENT;
+
+        int showKeyCount = pref.getInt("showKeyCount", 10);
+        int keyCount = 10;
+        int showedCount = 0;
+        
+        for (int i = 0; i < keyCount; i++) {
+            String keyName = pref.getString("keyname" + String.valueOf(i), null);
+            if (keyName == null) continue;
+            View currentView = mViewHashMap.get(keyName);
+            if (currentView == null)
+                continue;
+
+            int dpWidth = pref.getInt("size" + String.valueOf(i), -1);
+            if (dpWidth < 0) dpWidth = 40;
+
+            final float scale = getResources().getDisplayMetrics().density;
+            int pxWidth = (int)(dpWidth * scale + 0.5f);
+            
+            currentView.setLayoutParams(new LinearLayout.LayoutParams(pxWidth, FP, 0));
+            
+            group.addView(currentView);
+            boolean show = pref.getBoolean("show" + String.valueOf(i), true);
+            if (!show) {
+                currentView.setVisibility(View.GONE);
+            } else {
+                currentView.setVisibility(View.VISIBLE);
+            }
+
+            if (show)
+                showedCount++;
+            
+            if (showedCount != showKeyCount && show) {
+                View padView = new View(mContext);
+                LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(FP, FP, (float)1.0);
+                padView.setLayoutParams(layoutParams);
+                padView.setVisibility(View.INVISIBLE);
+                group.addView(padView);
+            }
+        }
+    }
+
+    public void setListener(OnViewPagerItemInstantiatedListener listener) {
+        mListener = listener;
+    }
+
+    public interface OnViewPagerItemInstantiatedListener {
+        public void onItemInstantiated(View view);
+    }
+
+    public class SettingChangedReceiver extends BroadcastReceiver {        
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if ("com.android.systemui.statusbar.NAVIGATION_BAR_SETTING_CHANGED".equals(action)) {
+                View view = mAdapter.getView(1);
+                if (view == null)
+                    return;
+                setUpNavigationBarKeys(view);
+                mViewPager.setCurrentItem(1);
+            } else if ("com.android.systemui.statusbar.TOGGLE_BAR_SETTING_CHANGED".equals(action)) {
+            }
+        }
+    }
+
+    private void setUpRotationButton(View view) {
+        final View rotationSetting = view.findViewById(R.id.rot_setting);
+        if (rotationSetting == null) return;
+        final View rotationIndView = view.findViewById(R.id.rot_setting_ind);
+        if (rotationIndView == null) return;
+      
+        rotationSetting.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    int rotationState = Settings.System.getInt(mContext.getContentResolver(), "accelerometer_rotation");
+                    if (rotationState == 1) {
+                        Settings.System.putInt(mContext.getContentResolver(), "accelerometer_rotation", 0);
+                        rotationIndView.setBackgroundResource(android.R.color.darker_gray);
+                    } else {
+                        Settings.System.putInt(mContext.getContentResolver(), "accelerometer_rotation", 1);
+                        rotationIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+                    }
+                } catch (SettingNotFoundException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+
+        try {
+            int rotationState = Settings.System.getInt(mContext.getContentResolver(), "accelerometer_rotation");
+            if (rotationState == 1) {
+                rotationIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+            } else {
+                rotationIndView.setBackgroundResource(android.R.color.darker_gray);
+            }
+        } catch (SettingNotFoundException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public class WifiReceiver extends BroadcastReceiver implements OnViewPagerItemInstantiatedListener {
+        ImageView wifiIndView = null;
+        
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            changeWifiIndState();
+        }
+        
+        public void onItemInstantiated(View view) {
+            View wifiSetting = view.findViewById(R.id.wifi_setting);
+            if (wifiSetting == null)
+                return;
+            wifiIndView = (ImageView) wifiSetting.findViewById(R.id.wifi_setting_ind);
+            changeWifiIndState();
+            wifiSetting.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    WifiManager wifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+                    if (wifiManager == null)
+                        return;
+                    if (wifiManager.isWifiEnabled()) {
+                        wifiManager.setWifiEnabled(false);
+                    } else {
+                        wifiManager.setWifiEnabled(true);
+                    }
+                }
+            });
+        }
+        
+        private void changeWifiIndState() {
+            WifiManager wifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager == null) {
+                Log.d("WifiReceiver", "wifiManager is null");
+                return;
+            }
+            if (wifiIndView == null) {
+                Log.d("WifiReceiver", "wifiIndView is null");
+                return;
+            }
+            if (wifiManager.isWifiEnabled()) {
+                wifiIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+            } else {
+                wifiIndView.setBackgroundResource(android.R.color.darker_gray);
+            }         
+        }
+    }
+
+    public class BluetoothReceiver extends BroadcastReceiver implements OnViewPagerItemInstantiatedListener {
+        ImageView bluetoothIndView = null;
+        
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            changeBluetoothIndState();
+        }
+        
+        public void onItemInstantiated(View view) {
+            View bluetoothSetting = view.findViewById(R.id.bluetooth_setting);
+            if (bluetoothSetting == null)
+                return;
+            bluetoothIndView = (ImageView) bluetoothSetting.findViewById(R.id.bluetooth_setting_ind);
+            changeBluetoothIndState();
+            bluetoothSetting.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
+                    if (ba == null) {
+                        return;
+                    }
+                    if (bluetoothIndView == null) {
+                        return;
+                    }
+                    if (ba.isEnabled()) {
+                        ba.disable();
+                    } else {
+                        ba.enable();
+                    }
+                }
+            });
+        }
+        
+        private void changeBluetoothIndState() {
+            BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
+            if (ba == null) {
+                return;
+            }
+            if (bluetoothIndView == null) {
+                return;
+            }
+            if (ba.isEnabled()) {
+                bluetoothIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+            } else {
+                bluetoothIndView.setBackgroundResource(android.R.color.darker_gray);
+            }         
+        }        
+    }
+
+    public class GpsReceiver extends BroadcastReceiver implements OnViewPagerItemInstantiatedListener {
+        ImageView gpsIndView = null;
+        
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            changeGpsIndState();
+        }
+        
+        public void onItemInstantiated(View view) {
+            View gpsSetting = view.findViewById(R.id.gps_setting);
+            if (gpsSetting == null)
+                return;
+            gpsIndView = (ImageView) gpsSetting.findViewById(R.id.gps_setting_ind);
+            changeGpsIndState();            
+            gpsSetting.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    String provider = Settings.Secure.getString(mContext.getContentResolver(), Settings.Secure.LOCATION_PROVIDERS_ALLOWED);
+                    if(!provider.contains("gps")){ //if gps is disabled
+                        final Intent poke = new Intent();
+                        poke.setClassName("com.android.settings", "com.android.settings.widget.SettingsAppWidgetProvider"); 
+                        poke.addCategory(Intent.CATEGORY_ALTERNATIVE);
+                        poke.setData(Uri.parse("3")); 
+                        mContext.sendBroadcast(poke);
+                    } else {
+                        final Intent poke = new Intent();
+                        poke.setClassName("com.android.settings", "com.android.settings.widget.SettingsAppWidgetProvider");
+                        poke.addCategory(Intent.CATEGORY_ALTERNATIVE);
+                        poke.setData(Uri.parse("3")); 
+                        mContext.sendBroadcast(poke);
+                    }
+                }
+            });
+        }
+        
+        private void changeGpsIndState() {
+            String gpsStatus = Settings.Secure.getString(mContext.getContentResolver(), Settings.Secure.LOCATION_PROVIDERS_ALLOWED);
+            if (gpsIndView == null) {
+                return;
+            }
+            if (gpsStatus.contains("gps")) {
+                gpsIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+            } else {
+                gpsIndView.setBackgroundResource(android.R.color.darker_gray);
+            }         
+        }
+
+    }
+    public class SoundReceiver extends BroadcastReceiver implements OnViewPagerItemInstantiatedListener {
+        ImageView soundIndView = null;
+        ImageView soundButton = null;
+        
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            changeSoundIndState();
+        }
+        
+        public void onItemInstantiated(View view) {
+            View soundSetting = view.findViewById(R.id.sound_setting);
+            if (soundSetting == null)
+                return;
+            soundIndView = (ImageView) soundSetting.findViewById(R.id.sound_setting_ind);
+            soundButton = (ImageView) soundSetting.findViewById(R.id.sound_setting_icon);
+            changeSoundIndState();
+            soundSetting.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+                    if (audioManager == null) return;
+                    int mode = audioManager.getRingerMode();
+                    if (mode == AudioManager.RINGER_MODE_NORMAL) {
+                        audioManager.setRingerMode(AudioManager.RINGER_MODE_VIBRATE);
+                    } else if (mode == AudioManager.RINGER_MODE_VIBRATE) {
+                        audioManager.setRingerMode(AudioManager.RINGER_MODE_SILENT);
+                    } else if (mode == AudioManager.RINGER_MODE_SILENT) {
+                        audioManager.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
+                    }
+                }
+            });
+        }
+        
+        private void changeSoundIndState() {
+            AudioManager audioManager = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) return;
+            if (soundIndView == null) return;
+            if (soundButton == null) return;
+            int mode = audioManager.getRingerMode();
+            if (mode == AudioManager.RINGER_MODE_NORMAL) {
+                soundButton.setImageResource(R.drawable.ic_sound);
+                soundIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+            } else if (mode == AudioManager.RINGER_MODE_VIBRATE) {
+                soundButton.setImageResource(R.drawable.ic_sound_v);
+                soundIndView.setBackgroundResource(android.R.color.holo_blue_dark);
+            } else if (mode == AudioManager.RINGER_MODE_SILENT) {
+                soundButton.setImageResource(R.drawable.ic_sound_s);
+                soundIndView.setBackgroundResource(android.R.color.darker_gray);
+            }
+        }        
+    }
+
+    public class WifiApReceiver extends BroadcastReceiver implements OnViewPagerItemInstantiatedListener {
+        ImageView wifiApIndView = null;
+        boolean prevWifiState = false;
+        
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            changeWifiApIndState();
+        }
+        
+        public void onItemInstantiated(View view) {
+            View wifiApSetting = view.findViewById(R.id.wifi_ap_setting);
+            if (wifiApSetting == null)
+                return;
+            wifiApIndView = (ImageView) wifiApSetting.findViewById(R.id.wifi_ap_setting_ind);
+            changeWifiApIndState();
+            wifiApSetting.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    WifiManager wifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+                    if (wifiManager == null) return;
+                    try {
+                        Method method = wifiManager.getClass().getMethod("isWifiApEnabled");
+                        boolean isWifiApEnabled = ((Boolean)method.invoke(wifiManager)).booleanValue();
+                        method = wifiManager.getClass().getMethod("getWifiApConfiguration");
+                        //WifiConfiguration config = (WifiConfiguration) method.invoke(wifiManager);
+                        method = wifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
+                        if (isWifiApEnabled) {
+                            if (!((Boolean)method.invoke(wifiManager, null, false)).booleanValue()) {
+                                Toast.makeText(mContext, "cannot turn wifi tethering off", Toast.LENGTH_LONG).show();
+                            }
+                            if (prevWifiState) {
+                                wifiManager.setWifiEnabled(true);
+                            }
+                        } else {
+                            if (wifiManager.isWifiEnabled()) {
+                                prevWifiState = true;
+                                wifiManager.setWifiEnabled(false);
+                            } else {
+                                prevWifiState = false;
+                            }
+                            if (!((Boolean)method.invoke(wifiManager, null, true)).booleanValue()) {
+                                Toast.makeText(mContext, "cannot turn wifi tethering on", Toast.LENGTH_LONG).show();
+                            }
+                        }                        
+                    } catch (SecurityException e) {
+                        e.printStackTrace();
+                    } catch (NoSuchMethodException e) {
+                        e.printStackTrace();
+                    } catch (IllegalArgumentException e) {
+                        e.printStackTrace();
+                    } catch (IllegalAccessException e) {
+                        e.printStackTrace();
+                    } catch (InvocationTargetException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+        }
+        
+        private void changeWifiApIndState() {
+            WifiManager wifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager == null) return;
+            if (wifiApIndView == null) return;
+            boolean isWifiApEnabled = false;
+            
+            try {
+                Method method = wifiManager.getClass().getMethod("isWifiApEnabled");
+                isWifiApEnabled = ((Boolean)method.invoke(wifiManager)).booleanValue();
+            } catch (SecurityException e) {
+                e.printStackTrace();
+            } catch (NoSuchMethodException e) {
+                e.printStackTrace();
+            } catch (IllegalArgumentException e) {
+                e.printStackTrace();
+            } catch (IllegalAccessException e) {
+                e.printStackTrace();
+            } catch (InvocationTargetException e) {
+                e.printStackTrace();
+            }
+
+            if (isWifiApEnabled) {
+                wifiApIndView.setBackgroundResource(android.R.color.holo_blue_bright);
+            } else {
+                wifiApIndView.setBackgroundResource(android.R.color.darker_gray);
+            }         
+        }
+    }
+
+
+}
