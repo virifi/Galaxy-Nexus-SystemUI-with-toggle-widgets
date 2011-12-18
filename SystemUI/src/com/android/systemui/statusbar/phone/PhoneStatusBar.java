@@ -696,6 +696,7 @@ public class PhoneStatusBar extends StatusBar implements NavigationBarView.OnVie
         if (SPEW) Slog.d(TAG, "removeNotification key=" + key);
         StatusBarNotification old = removeNotificationViews(key);
 
+
         if (old != null) {
             // Cancel the ticker if it's still running
             mTicker.removeEntry(old);
@@ -1629,6 +1630,11 @@ public class PhoneStatusBar extends StatusBar implements NavigationBarView.OnVie
 
             // If this click was on the intruder alert, hide that instead
             mHandler.sendEmptyMessage(MSG_HIDE_INTRUDER);
+
+
+            // for NavigationBar
+            Intent intent = new Intent("com.android.systemui.statusbar.ON_NOTIFICATION_CLICKED");
+            mContext.sendBroadcast(intent);
         }
     }
 

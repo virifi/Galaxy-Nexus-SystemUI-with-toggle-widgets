@@ -38,7 +38,6 @@ import android.view.View.OnLongClickListener;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
-import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
 import android.util.Log;
 import android.content.pm.PackageManager;
 import java.util.HashMap;
@@ -46,7 +45,6 @@ import android.widget.Toast;
 
 // for ViewPager
 import android.support.v4.viewpager.ViewPager;
-import android.support.v4.viewpager.ViewPager.OnPageChangeListener;
 import android.support.v4.viewpager.PagerAdapter;
 import android.view.LayoutInflater;
 import android.os.Parcelable;
@@ -67,6 +65,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 
+
 // for onClick
 import android.os.SystemClock;
 import android.os.RemoteException;
@@ -78,7 +77,7 @@ import com.android.internal.statusbar.IStatusBarService;
 
 import com.android.systemui.R;
 
-public class NavigationBarView extends LinearLayout implements OnPageChangeListener {
+public class NavigationBarView extends LinearLayout {
     final static boolean DEBUG = false;
     final static String TAG = "PhoneStatusBar/NavigationBarView";
 
@@ -107,9 +106,9 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
     SoundReceiver mSoundReceiver;
     WifiApReceiver mWifiApReceiver;
 
-    boolean mAlwaysShowMenu = true;
-    boolean mOpenStatusBarLeft = false;
-    boolean mOpenStatusBarRight = false;        
+    SharedPreferences mSharedPreferences;
+    
+    
 
     int mBarSize;
     boolean mVertical;
@@ -218,27 +217,28 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
     public void setMenuVisibility(final boolean show) {
         setMenuVisibility(show, false);
     }
+
     public void setMenuVisibility(final boolean show, final boolean force) {
-        // SharedPreferences pref = getSharedPreferences();
-        // if (pref == null) return;
-        // boolean alwaysShowMenu = pref.getBoolean("always_show_menu", true);
-        setMenuVisibility(show, force, mAlwaysShowMenu);
-    }
-    
-    public void setMenuVisibility(final boolean show, final boolean force, final boolean alwaysShowMenu) {
+        if (!getSharedPreferences()) {
+            Log.d("setMenuVisibility", "cannot get SharedPreferences");
+            return;
+        }
+        boolean alwaysShowMenu = mSharedPreferences.getBoolean("always_show_menu", true);
         if (alwaysShowMenu && mShowMenu == true) return;
 
         if (!force && mShowMenu == show) return;
 
-        mShowMenu = show;        
-        //getMenuButton().setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
-        View menu = mViewHashMap.get("Menu");
-        if (menu != null && menu.getVisibility() != View.GONE) menu.setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
-        menu = mViewHashMap.get("Menu2");
-        if (menu != null && menu.getVisibility() != View.GONE) menu.setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
-        menu = mViewHashMap.get("Menu3");
-        if (menu != null && menu.getVisibility() != View.GONE) menu.setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
+        mShowMenu = show;
 
+        View v = mViewHashMap.get("Menu");
+        if (v != null)
+            v.setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
+        v = mViewHashMap.get("Menu1");
+        if (v != null)
+            v.setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);
+        v = mViewHashMap.get("Menu3");
+        if (v != null)
+            v.setVisibility(mShowMenu ? View.VISIBLE : View.INVISIBLE);       
     }
 
     public void setLowProfile(final boolean lightsOut) {
@@ -322,8 +322,6 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
         IntentFilter settingChangedFilter = new IntentFilter();
         settingChangedFilter.addAction("com.android.systemui.statusbar.NAVIGATION_BAR_SETTING_CHANGED");
         settingChangedFilter.addAction("com.android.systemui.statusbar.TOGGLE_BAR_SETTING_CHANGED");
-        settingChangedFilter.addAction("com.android.systemui.statusbar.MAIN_SETTING_CHANGED");
-        settingChangedFilter.addAction("com.android.systemui.statusbar.ON_NOTIFICATION_CLICKED");
         mContext.registerReceiver(mSettingChangedReceiver, settingChangedFilter);
 
         // toggle settings
@@ -336,9 +334,7 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
         mAdapter = new ViewAdapter(mContext);
         mViewPager = (ViewPager)((FrameLayout) findViewById(R.id.rot02)).findViewById(R.id.viewpager);
         mViewPager.setAdapter(mAdapter);
-        mViewPager.setOnPageChangeListener(this);
         mViewPager.setCurrentItem(1);
-        
         
         IntentFilter wifiFilter = new IntentFilter("android.net.wifi.WIFI_STATE_CHANGED");
         mContext.registerReceiver(mWifiReceiver, wifiFilter);
@@ -415,21 +411,6 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
 
             if (position == 0) {
                 views[position] = mInflater.inflate(R.layout.navigation_bar_left_page, pager, false);
-                View clock = views[position].findViewById(R.id.clock);
-                clock.setOnClickListener(new OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        Intent intent = new Intent();
-                        intent.setClassName("com.google.android.deskclock", "com.android.deskclock.AlarmClock");
-                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        try {
-                            mContext.startActivity(intent);
-                        } catch (android.content.ActivityNotFoundException e) {
-                            e.printStackTrace();
-                        }
-                        mViewPager.setCurrentItem(1);
-                    }
-                });
             } else if (position == 1) {
                 final View centerView = mInflater.inflate(R.layout.navigation_bar_center_page, pager, false);
                 setUpNavigationBarKeys(centerView);
@@ -440,7 +421,7 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
                     optionalButton.setOnClickListener(new OnClickListener() {
                             @Override
                             public void onClick(View v) {
-                                Intent intent = new Intent("com.android.systemui.statusbar.OPTIONAL_BUTTON_CLICKED");                                
+                                Intent intent = new Intent("com.android.systemui.statusbar.OPTIONAL_BUTTON_CLICKED");
                                 mContext.sendBroadcast(intent);
                             }
                         });
@@ -460,23 +441,6 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
             }
             
             pager.addView(views[position]);
-
-            SharedPreferences pref = getSharedPreferences();
-            if (pref != null) {
-                if (pref.getBoolean("always_show_menu", true)) {
-                    setMenuVisibility(true, true, true);
-                }
-                if (pref.getBoolean("open_statusbar_left", false)) {
-                    mOpenStatusBarLeft = true;
-                } else {
-                    mOpenStatusBarLeft = false;
-                }
-                if (pref.getBoolean("open_statusbar_right", false)) {
-                    mOpenStatusBarRight = true;
-                } else {
-                    mOpenStatusBarRight = false;
-                }
-            }
 
             return views[position];
         }
@@ -505,12 +469,11 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
     }
 
     private void setUpNavigationBarKeys(View view) {
-        SharedPreferences pref = getSharedPreferences();
-        if (pref == null) {
-            Log.d("setUpNavigationBarKeys", "pref is null");
+        if (!getSharedPreferences()) {
+            Log.d("setUpNavigationBarKeys", "cannot get SharedPreferences");
             return;
         }
-        if (pref.getString("keyname1", null) == null) {
+        if (mSharedPreferences.getString("keyname1", null) == null) {
             Log.d("setUpNavigationBarKeys", "keyname1 is null");
 			return;
         }
@@ -542,18 +505,21 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
 
         final int FP = LinearLayout.LayoutParams.FILL_PARENT;
 
-        int showKeyCount = pref.getInt("showKeyCount", 10);
+        int showKeyCount = mSharedPreferences.getInt("showKeyCount", 10);
         int keyCount = 10;
         int showedCount = 0;
         
         for (int i = 0; i < keyCount; i++) {
-            String keyName = pref.getString("keyname" + String.valueOf(i), null);
-            if (keyName == null) continue;
+            String keyName = mSharedPreferences.getString("keyname" + String.valueOf(i), null);
+            if (keyName == null) {
+                Log.d("setUpNavigationBarKeys", "keyName is null");
+                continue;
+            }
             View currentView = mViewHashMap.get(keyName);
             if (currentView == null)
                 continue;
 
-            int dpWidth = pref.getInt("size" + String.valueOf(i), -1);
+            int dpWidth = mSharedPreferences.getInt("size" + String.valueOf(i), -1);
             if (dpWidth < 0) dpWidth = 40;
 
             final float scale = getResources().getDisplayMetrics().density;
@@ -562,7 +528,7 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
             currentView.setLayoutParams(new LinearLayout.LayoutParams(pxWidth, FP, 0));
             
             group.addView(currentView);
-            boolean show = pref.getBoolean("show" + String.valueOf(i), true);
+            boolean show = mSharedPreferences.getBoolean("show" + String.valueOf(i), true);
             if (!show) {
                 currentView.setVisibility(View.GONE);
             } else {
@@ -593,7 +559,6 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
     public class SettingChangedReceiver extends BroadcastReceiver {        
         @Override
         public void onReceive(Context context, Intent intent) {
-            //Log.d("SettingChangedReceiver", "intent received");
             String action = intent.getAction();
             if ("com.android.systemui.statusbar.NAVIGATION_BAR_SETTING_CHANGED".equals(action)) {
                 View view = mAdapter.getView(1);
@@ -602,27 +567,7 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
                 setUpNavigationBarKeys(view);
                 mViewPager.setCurrentItem(1);
             } else if ("com.android.systemui.statusbar.TOGGLE_BAR_SETTING_CHANGED".equals(action)) {
-            } else if ("com.android.systemui.statusbar.MAIN_SETTING_CHANGED".equals(action)) {
-                //Log.d("SettingChangedReceiver", "main_setting_changed intent received");
-                if (intent.getBooleanExtra("always_show_menu", false)) {
-                    //Log.d("SettingChangedReceiver", "always_show_menu received");
-                    mAlwaysShowMenu = intent.getBooleanExtra("value", true);
-                    if (mAlwaysShowMenu) {
-                        setMenuVisibility(true, true, true);
-                    } else {
-                        setMenuVisibility(mShowMenu, true, false);
-                    }
-                }
-                if (intent.getBooleanExtra("open_statusbar_left", false)) {
-                    mOpenStatusBarLeft = intent.getBooleanExtra("value", true);
-                }
-                if (intent.getBooleanExtra("open_statusbar_right", false)) {
-                    mOpenStatusBarRight = intent.getBooleanExtra("value", true);
-                }
-            } else if ("com.android.systemui.statusbar.ON_NOTIFICATION_CLICKED".equals(action)) {
-                //Log.d("SettingChangedReceiver", "ON_NOTIFICATION_CLICKED");
-                mViewPager.setCurrentItem(1);
-            }            
+            }
         }
     }
 
@@ -946,49 +891,19 @@ public class NavigationBarView extends LinearLayout implements OnPageChangeListe
         }
     }
 
-    private SharedPreferences getSharedPreferences() {
+    private boolean getSharedPreferences() {
         Context packageContext = null;
         try {
             packageContext = mContext.createPackageContext("net.virifi.android.navigationbarsettings", Context.CONTEXT_RESTRICTED);
         } catch (PackageManager.NameNotFoundException e) {
-            //e.printStackTrace();
-            return null;
+            e.printStackTrace();
+            return false;
         }
-        SharedPreferences pref = packageContext.getSharedPreferences("NavigationBarSettings", Activity.MODE_WORLD_READABLE | Activity.MODE_MULTI_PROCESS);
-        return pref;
+        mSharedPreferences = packageContext.getSharedPreferences("NavigationBarSettings", Activity.MODE_WORLD_READABLE | Activity.MODE_MULTI_PROCESS);
+		if (mSharedPreferences == null) {
+            Log.d("setUpNavigationBarKeys", "pref is null");
+			return false;
+		}
+        return true;
     }
-
-    int mPrevPosition = 1;
-	@Override
-	public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
-	}
-	@Override
-	public void onPageSelected(int paramPosition) {        
-        try {
-            Object service = mContext.getSystemService("statusbar");
-            Class statusBarManager = Class.forName("android.app.StatusBarManager");
-            Method expand = statusBarManager.getMethod("expand");
-            Method collapse = statusBarManager.getMethod("collapse");
-            if (mPrevPosition == 1 && paramPosition == 0 && mOpenStatusBarLeft) {
-                expand.invoke(service);
-            } else if (mPrevPosition == 0 && paramPosition == 1 && mOpenStatusBarLeft) {
-                collapse.invoke(service);
-            } else if (mPrevPosition == 1 && paramPosition == 2 && mOpenStatusBarRight) {
-                expand.invoke(service);
-            } else if (mPrevPosition == 2 && paramPosition == 1 && mOpenStatusBarRight) {
-                collapse.invoke(service);
-            }
-        } catch (ClassNotFoundException e) {
-        } catch (SecurityException e) {
-        } catch (NoSuchMethodException e) {
-        } catch (IllegalArgumentException e) {
-        } catch (IllegalAccessException e) {
-        } catch (InvocationTargetException e) {
-        }
-        mPrevPosition = paramPosition;
-	}
-	@Override
-	public void onPageScrollStateChanged(int state) {
-	}
-
 }

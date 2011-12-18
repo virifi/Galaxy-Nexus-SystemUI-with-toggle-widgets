@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+        xmlns:android="http://schemas.android.com/apk/res/android">
+         <PreferenceScreen
+                android:title="key arrangement">
+            <intent android:action="android.intent.action.VIEW"
+                    android:targetPackage="net.virifi.android.navigationbarsettings"
+                    android:targetClass="net.virifi.android.navigationbarsettings.NavigationBarKeySettingActivity" />
+        </PreferenceScreen>
+        <CheckBoxPreference
+                android:key="always_show_menu"
+                android:title="always show menu"
+                android:defaultValue="true" />
+        <CheckBoxPreference
+                android:key="open_statusbar_left"
+                android:title="open statusbar (left page)"
+                android:summary="open statusbar when swype to left page"/>
+        <CheckBoxPreference
+                android:key="open_statusbar_right"
+                android:title="open statusbar (right page)"
+                android:summary="open statusbar when swype to right page"/>
+</PreferenceScreen>

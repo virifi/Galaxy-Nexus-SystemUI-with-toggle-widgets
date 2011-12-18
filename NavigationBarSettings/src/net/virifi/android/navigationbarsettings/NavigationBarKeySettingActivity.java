@@ -227,7 +227,7 @@ public class NavigationBarKeySettingActivity extends Activity {
 	        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
 	        // アイテムを追加します
 	        adapter.add("small");
-	        adapter.add("midium");
+	        adapter.add("medium");
 	        adapter.add("large");
 	        Spinner spinner = (Spinner) convertView.findViewById(R.id.spinner1);
 	        
